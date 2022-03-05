@@ -9,13 +9,12 @@ you can try this with
 ```
 The last part of the  output would look like
 ```
-./simdsorttest 8001
-qsort:  0.000525483
-sort:   0.000371819
-blocksort:  0.000224667
-sort passed for n=8001
+qsort:  0.000494398
+sort:   0.000368343
+blocksort:  0.000204101
+sort passed for n=8002
 ```
-The numbers are elapsed time to sort 8001 64-bit integer numbers,
+The numbers are elapsed time to sort 8002 64-bit integer numbers,
 with system qsort(3), non-simd quiksort and simd quicksort.
 This result is ontained  on Intel® Core™ i7-1065G7 with gcc version
 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04).  
