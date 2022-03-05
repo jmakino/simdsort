@@ -269,10 +269,10 @@ int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
 	u.i =  _mm256_cmpgt_epi64( pwork[ii], pivotv);
 	int masku = _mm256_movemask_pd(u.d);
 	union m256di lower, upper;
-	//	int dl = popcount_table_upper[maskl];
-	//	int dh = popcount_table_upper[masku];
-	int dl = _mm_popcnt_u32(maskl);
-	int dh = _mm_popcnt_u32(masku);
+	int dl = popcount_table_upper[maskl];
+	int dh = popcount_table_upper[masku];
+		//		int dl = _mm_popcnt_u32(maskl);
+		//		int dh = _mm_popcnt_u32(masku);
 	lower.f =_mm256_permutevar8x32_ps(*((__m256*)(pwork+ii)),
 					  *((__m256i*)(permute_table_lower
 						       +maskl)));
