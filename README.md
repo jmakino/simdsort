@@ -29,6 +29,7 @@ This result is ontained  on Intel® Core™ i7-1065G7 with gcc version
 ```
 
 
+
 Provide:
 ```
 void simd_sort_int64( int64_t * r, int n);
@@ -38,7 +39,9 @@ void simd_sort_int64( int64_t * r, int n);
 r is the pointer to the array of int64_t to be sorted
 n is the number of elements
 
+## Note
 
+This source is in pure C and no care for name collision is done.
 
 ## Algorithm
 
