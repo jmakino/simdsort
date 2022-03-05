@@ -328,6 +328,11 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
 
 void simd_sort_int64( int64_t * r, int n)
 {
+    static int initialized=0;
+    if (initialized==0){
+	init_sort_table();
+	initialized=1;
+    }
     simd_sort_int64_array(r, 0, n-1);
 }
 

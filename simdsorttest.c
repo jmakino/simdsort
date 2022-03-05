@@ -15,7 +15,7 @@
 
 int main(int argc, char** argv)
 {
-    init_sort_table();
+    //    init_sort_table();
     //    dump_sort_table();
     int nstart= atoi(argv[1]);
     int nend =nstart+1;
