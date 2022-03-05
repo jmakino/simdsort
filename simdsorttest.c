@@ -26,6 +26,7 @@ int main(int argc, char** argv)
     }else if (argc <= 2){
 	showtime = true;
     }
+    
     int64_t data[nend];
     int64_t data0[nend];
     int64_t data1[nend];
