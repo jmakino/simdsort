@@ -1,6 +1,6 @@
 # simdsort
 
-A fast quicksort function with AVX2 (currently) support
+A fast quicksort function with AVX2 and AVX512 support
 
 you can try this with
 
@@ -37,6 +37,8 @@ void simd_sort_int64( int64_t * r, int n);
 
 r is the pointer to the array of int64_t to be sorted
 n is the number of elements
+
+Use  -DAVX2  to utilize AVX2 and -DAVX2 to utilize AVX512.
 
 ## Note
 
