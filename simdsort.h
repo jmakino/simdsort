@@ -42,6 +42,42 @@ void make_permute_and_popcount_table_for_avx2(__m256i * stable,
 	//	fprintf(stderr, "\n");
     }
 }
+
+void make_single_permute_and_popcount_table_for_avx2(__m256i * stable,
+						     int* ptable)
+{
+    // lower 4 bits: 1 if smaller than pivot
+    // upper 4 bits: 1 if larger than pivot
+    
+    for (int i=0;i<16;i++){
+	int count=0;
+	int countl=0;
+	int mask=0;
+	int32_t * p = (int32_t*)(stable+i);
+	for(int k=0;k<4;k++){
+	    if ((1<<k)&i){
+		int index = 6-count*2;
+		p[index] = k*2;
+		p[index+1] = k*2+1;
+		count++;
+	    }else{
+		int index = countl*2;
+		p[index] = k*2;
+		p[index+1] = k*2+1;
+		countl++;
+	    }
+		
+	}
+	ptable[i]=count;
+	//	fprintf(stderr, "i=%x count=%x ",i, count);
+	//	for (int ii=0;ii<8;ii++){
+	//	    fprintf(stderr, " %x",p[ii]);
+	//	}
+	//	fprintf(stderr, "\n");
+    }
+}
+
+
 void make_mask_table_for_avx2(__m256i * table)
 {
     //  4 bits: 1 if larger than pivot
@@ -74,6 +110,9 @@ void init_sort_table()
     make_permute_and_popcount_table_for_avx2(permute_table_lower,
 					     popcount_table_lower,
 					     false);
+    make_single_permute_and_popcount_table_for_avx2(permute_table_upper,
+						    popcount_table_upper);
+    
     make_mask_table_for_avx2(mask_table);
 }
 	
@@ -254,21 +293,21 @@ int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
 #if 0
 	int i4 = ii<<2;
 	for(i=i4; i<i4+4; i++){
-	    if(work[i]< pivot){
-		l++;
-		data[l]=work[i];
-	    }else if(work[i]> pivot){
+	    if(work[i]> pivot){
 		h--;
 		data[h]=work[i];
+	    }else if(work[i]< pivot){
+		l++;
+		data[l]=work[i];
 	    }
-	} 
+	}
 #else
-	union m256di u, u2; 
+	register union m256di u, u2; 
 	u.i =  _mm256_cmpgt_epi64(pivotv, pwork[ii]);
 	int maskl = _mm256_movemask_pd(u.d);
 	u.i =  _mm256_cmpgt_epi64( pwork[ii], pivotv);
 	int masku = _mm256_movemask_pd(u.d);
-	union m256di lower, upper;
+	register union m256di lower, upper;
 	int dl = popcount_table_upper[maskl];
 	int dh = popcount_table_upper[masku];
 //		int dl = _mm_popcnt_u32(maskl);
@@ -302,6 +341,72 @@ int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
     return i-1;
 }
 
+
+int simd_partition_2part_avx2(int64_t* data, int64_t pivot, int n)
+{
+    int n4 = (n+3)/4;
+    int nb = n4*4;
+    __m256i  work256[n4];
+    int64_t *  work = (int64_t*) work256;
+    __m256d* src = (__m256d*)(data+1);
+    __m256d* dest = (__m256d*)work;
+    //    fprintf(stderr, "addresses = %lx %lx\n",(int64_t) src, (int64_t) dest);
+    for(int i=0;i<n4;i++){
+	dest[i]=_mm256_loadu_pd((double*)(src+i));
+    }
+    int l= -1;
+    int h=n;
+    int i;
+    int n4l = (n-1)/4;
+    __m256i* pwork = (__m256i*)work;
+    __m256i pivotv = _mm256_broadcastq_epi64(*((__m128i*)(&pivot)));
+   
+    for(int ii=0;ii<n4l;ii++){
+#if 0
+	int i4 = ii<<2;
+	for(i=i4; i<i4+4; i++){
+	    if(work[i]> pivot){
+		h--;
+		data[h]=work[i];
+	    }else{
+		l++;
+		data[l]=work[i];
+	    }
+	}
+#else
+	register union m256di u, u2; 
+	//	u.i =  _mm256_cmpgt_epi64(pivotv, pwork[ii]);
+	//	int maskl = _mm256_movemask_pd(u.d);
+	u.i =  _mm256_cmpgt_epi64( pwork[ii], pivotv);
+	int masku = _mm256_movemask_pd(u.d);
+	register union m256di lower, upper;
+	//	int dl = popcount_table_upper[maskl];
+	int dh = popcount_table_upper[masku];
+	int dl = 4-dh;
+	upper.f =_mm256_permutevar8x32_ps(*((__m256*)(pwork+ii)),
+					  *((__m256i*)(permute_table_upper
+						       +masku)));
+	_mm256_storeu_pd((double*)(data+l+1), upper.d);
+	_mm256_maskstore_pd((double*)(data+h-4), mask_table[masku],
+			    upper.d);
+	l+=dl;
+	h-=dh; 
+#endif	
+    }
+    for(i=n4l*4;i<n-1;i++){
+	if(work[i]> pivot){
+	    h--;
+	    data[h]=work[i];
+	}else{
+	    l++;
+	    data[l]=work[i];
+	}
+    }
+    data[l+1]=pivot;
+    
+    return l+1;
+}
+
 void dump_data(int64_t* data,
 	       int n,
 	       char* message)
@@ -313,6 +418,21 @@ void dump_data(int64_t* data,
     printf("\n");
 }
 
+
+
+void simd_sort_int64_array_2part( int64_t * r, int lo, int up )
+{
+    //    printf("called with %d %d\n", lo, up);
+    if (up-lo<1) return;
+    int i, j;
+    int64_t tempr;
+    //      dump_data( r+lo, up-lo+1, "before");
+    i=simd_partition_2part_avx2(r+lo, r[lo], up-lo+1);
+    //        dump_data( r+lo, up-lo+1, "after ");
+    //        printf("i=%d\n", i);
+    simd_sort_int64_array_2part(r,lo,lo+i);  
+    simd_sort_int64_array_2part(r,lo+i+1,up);  
+}
 
 void simd_sort_int64_array( int64_t * r, int lo, int up )
 {
@@ -335,7 +455,8 @@ void simd_sort_int64( int64_t * r, int n)
 	init_sort_table();
 	initialized=1;
     }
-    simd_sort_int64_array(r, 0, n-1);
+    simd_sort_int64_array_2part(r, 0, n-1);
+    //    simd_sort_int64_array(r, 0, n-1);
 }
 
     
