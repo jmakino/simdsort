@@ -375,12 +375,9 @@ int simd_partition_2part_avx2(int64_t* data, int64_t pivot, int n)
 	}
 #else
 	register union m256di u, u2; 
-	//	u.i =  _mm256_cmpgt_epi64(pivotv, pwork[ii]);
-	//	int maskl = _mm256_movemask_pd(u.d);
 	u.i =  _mm256_cmpgt_epi64( pwork[ii], pivotv);
 	int masku = _mm256_movemask_pd(u.d);
 	register union m256di lower, upper;
-	//	int dl = popcount_table_upper[maskl];
 	int dh = popcount_table_upper[masku];
 	int dl = 4-dh;
 	upper.f =_mm256_permutevar8x32_ps(*((__m256*)(pwork+ii)),
@@ -455,8 +452,8 @@ void simd_sort_int64( int64_t * r, int n)
 	init_sort_table();
 	initialized=1;
     }
-    simd_sort_int64_array_2part(r, 0, n-1);
-    //    simd_sort_int64_array(r, 0, n-1);
+    //    simd_sort_int64_array_2part(r, 0, n-1);
+     simd_sort_int64_array(r, 0, n-1);
 }
 
     
