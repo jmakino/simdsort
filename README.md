@@ -19,7 +19,13 @@ with system qsort(3), non-simd quiksort and simd quicksort.
 This result is ontained  on Intel® Core™ i7-1065G7 with gcc version
 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04).  
 
-
+On Fugaku, the same test resulted in:
+```
+qsort:  0.00147074
+sort:   0.000958731
+blocksort:  0.000527481
+sort passed for n=8002
+```
 
 ## Usage as header-only library
 
