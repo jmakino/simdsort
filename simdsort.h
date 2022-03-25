@@ -515,7 +515,6 @@ int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
     int64_t *  work = (int64_t*) work256;
     __m512d* src = (__m512d*)data;
     __m512d* dest = (__m512d*)work;
-    //    fprintf(stderr, "addresses = %lx %lx\n",(int64_t) src, (int64_t) dest);
     for(int i=0;i<n8;i++){
 	dest[i]=_mm512_loadu_pd((double*)(src+i));
     }
@@ -539,26 +538,34 @@ int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
 	    }
 	}
 #else
-	//	dump512(&pivotv, "pivot");
-	//	dump512(pwork+ii, "pwork[ii]");
 	__mmask8 maskl =  _mm512_cmpgt_epi64_mask(pivotv, pwork[ii]);
 	__mmask8 masku =  _mm512_cmpgt_epi64_mask( pwork[ii], pivotv);
-	register union m512di lower, upper;
-		int dl = _mm_popcnt_u32(maskl);
-		int dh = _mm_popcnt_u32(masku);
-	lower.d =_mm512_permutexvar_pd( *((__m512i*)(permute_table_lower_avx512
-						     +maskl)),
-					*((__m512d *)(pwork+ii)));
-	_mm512_storeu_pd((double*)(data+l+1), lower.d);
-	upper.d =_mm512_permutexvar_pd(*((__m512i*)(permute_table_upper_avx512
-						   +masku)),
-				       *((__m512d*)(pwork+ii)));
-	_mm512_mask_storeu_pd((double*)(data+h-8), mask_table_avx512[masku],
-			    upper.d);
+	int dl = _mm_popcnt_u32(maskl);
+	int dh = _mm_popcnt_u32(masku);
+	_mm512_mask_compressstoreu_pd((double*)(data+l+1), maskl, 
+				      *((__m512d*)(pwork+ii)));
+	_mm512_mask_compressstoreu_pd((double*)(data+h-dh), masku, 
+				      *((__m512d*)(pwork+ii)));
 	l+=dl;
 	h-=dh; 
 #endif	
     }
+    int nremain = n -n8l*8;
+    if (nremain > 0){
+	int ii = n8l;
+	__mmask8 maskr =(__mmask8)  ((1<<nremain)-1);
+	__mmask8 maskl =  _mm512_mask_cmpgt_epi64_mask(maskr,pivotv, pwork[ii]);
+	__mmask8 masku =  _mm512_mask_cmpgt_epi64_mask(maskr, pwork[ii], pivotv);
+	int dl = _mm_popcnt_u32(maskl);
+	int dh = _mm_popcnt_u32(masku);
+	_mm512_mask_compressstoreu_pd((double*)(data+l+1), maskl, 
+				      *((__m512d*)(pwork+ii)));
+	_mm512_mask_compressstoreu_pd((double*)(data+h-dh), masku, 
+				      *((__m512d*)(pwork+ii)));
+	l+=dl;
+	h-=dh; 
+    }
+#if 0    
     for(i=n8l*8;i<n;i++){
 	if(work[i]< pivot){
 	    l++;
@@ -568,6 +575,7 @@ int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
 	    data[h]=work[i];
 	}
     }
+#endif    
     for(i=l+1; i<h; i++){
 	data[i]=pivot;
     }
