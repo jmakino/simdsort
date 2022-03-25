@@ -9,9 +9,18 @@
 
 #include <stdbool.h>
 #include <assert.h>
-#include <x86intrin.h>
 #include <time.h>
+#if defined(AVX2) || defined(AVX512) 
+#include <x86intrin.h>
+#endif
 
+#if defined(SVE) 
+#ifdef __ARM_FEATURE_SVE
+#include <arm_sve.h>
+#endif /* __ARM_FEATURE_SVE */
+#endif
+
+#ifdef AVX2
 void make_permute_and_popcount_table_for_avx2(__m256i * stable,
 					      int* ptable,
 					      bool upper)
@@ -42,7 +51,7 @@ void make_permute_and_popcount_table_for_avx2(__m256i * stable,
 	//	fprintf(stderr, "\n");
     }
 }
-
+#endif
 #ifdef AVX512
 void make_permute_and_popcount_table_for_avx512(__m512i * stable,
 					      int* ptable,
@@ -102,6 +111,7 @@ static __mmask8 mask_table_avx512[256];
 
 #endif
 
+#ifdef AVX2
 void make_single_permute_and_popcount_table_for_avx2(__m256i * stable,
 						     int* ptable)
 {
@@ -162,26 +172,6 @@ static int popcount_table_upper[16];
 static int popcount_table_lower[16];
 static __m256i mask_table[16];
 
-void init_sort_table()
-{
-    make_permute_and_popcount_table_for_avx2(permute_table_upper,
-					     popcount_table_upper,
-					     true);
-    make_permute_and_popcount_table_for_avx2(permute_table_lower,
-					     popcount_table_lower,
-					     false);
-    make_mask_table_for_avx2(mask_table);
-#ifdef AVX512    
-    make_permute_and_popcount_table_for_avx512(permute_table_upper_avx512,
-					     popcount_table_upper_avx512,
-					     true);
-    make_permute_and_popcount_table_for_avx512(permute_table_lower_avx512,
-					     popcount_table_lower_avx512,
-					     false);
-    make_mask_table_for_avx512(mask_table_avx512);
-#endif    
-}
-	
 void dump_tables(__m256i * stable,
 		 int* ptable)
 
@@ -201,6 +191,30 @@ void dump_sort_table()
     dump_tables(permute_table_upper, popcount_table_upper);
     dump_tables(permute_table_lower, popcount_table_lower);
 }
+
+#endif
+void init_sort_table()
+{
+#ifdef AVX2    
+    make_permute_and_popcount_table_for_avx2(permute_table_upper,
+					     popcount_table_upper,
+					     true);
+    make_permute_and_popcount_table_for_avx2(permute_table_lower,
+					     popcount_table_lower,
+					     false);
+    make_mask_table_for_avx2(mask_table);
+#endif    
+#ifdef AVX512    
+    make_permute_and_popcount_table_for_avx512(permute_table_upper_avx512,
+					     popcount_table_upper_avx512,
+					     true);
+    make_permute_and_popcount_table_for_avx512(permute_table_lower_avx512,
+					     popcount_table_lower_avx512,
+					     false);
+    make_mask_table_for_avx512(mask_table_avx512);
+#endif    
+}
+	
 
 
 inline double GetWtime()
@@ -317,6 +331,7 @@ int block_partition(int64_t* data, int64_t pibot, int n)
     return i-1;
 }
 
+#ifdef AVX2
 union m256di{
     __m256d d;
     __m256i i;
@@ -333,28 +348,6 @@ void dump256(__m256i* pdata,
     }
     fprintf(stderr, "\n");
 }
-    
-
-#ifdef AVX512
-union m512di{
-    __m512d d;
-    __m512i i;
-    __m512 f;
-};
-
-	    
-void dump512(__m512i* pdata,
-	     char * s)
-{
-    fprintf(stderr, "%s ", s);
-    int64_t * p = (int64_t*) pdata;
-    for(int i=0;i<8; i++){
-	fprintf(stderr, " %ld", p[i]);
-    }
-    fprintf(stderr, "\n");
-}
-#endif    
-	    
 
 int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
 {
@@ -427,80 +420,6 @@ int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
     return i-1;
 }
 
-#ifdef AVX512
-int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
-{
-    //    if (n < 8){
-    //	return simd_partition_avx2(data,  pivot,  n);
-    //    }
-    int n8 = (n+7)/8;
-    int nb = n8*8;
-    __m512i  work256[n8];
-    int64_t *  work = (int64_t*) work256;
-    __m512d* src = (__m512d*)data;
-    __m512d* dest = (__m512d*)work;
-    //    fprintf(stderr, "addresses = %lx %lx\n",(int64_t) src, (int64_t) dest);
-    for(int i=0;i<n8;i++){
-	dest[i]=_mm512_loadu_pd((double*)(src+i));
-    }
-    int l= -1;
-    int h=n;
-    int i;
-    int n8l = n/8;
-    __m512i* pwork = (__m512i*)work;
-    __m512i pivotv = _mm512_broadcastq_epi64(*((__m128i*)(&pivot)));
-   
-    for(int ii=0;ii<n8l;ii++){
-#if 0
-	int i8 = ii<<3;
-	for(i=i8; i<i8+8; i++){
-	    if(work[i]> pivot){
-		h--;
-		data[h]=work[i];
-	    }else if(work[i]< pivot){
-		l++;
-		data[l]=work[i];
-	    }
-	}
-#else
-	//	dump512(&pivotv, "pivot");
-	//	dump512(pwork+ii, "pwork[ii]");
-	__mmask8 maskl =  _mm512_cmpgt_epi64_mask(pivotv, pwork[ii]);
-	__mmask8 masku =  _mm512_cmpgt_epi64_mask( pwork[ii], pivotv);
-	register union m512di lower, upper;
-		int dl = _mm_popcnt_u32(maskl);
-		int dh = _mm_popcnt_u32(masku);
-	lower.d =_mm512_permutexvar_pd( *((__m512i*)(permute_table_lower_avx512
-						     +maskl)),
-					*((__m512d *)(pwork+ii)));
-	_mm512_storeu_pd((double*)(data+l+1), lower.d);
-	upper.d =_mm512_permutexvar_pd(*((__m512i*)(permute_table_upper_avx512
-						   +masku)),
-				       *((__m512d*)(pwork+ii)));
-	_mm512_mask_storeu_pd((double*)(data+h-8), mask_table_avx512[masku],
-			    upper.d);
-	l+=dl;
-	h-=dh; 
-#endif	
-    }
-    for(i=n8l*8;i<n;i++){
-	if(work[i]< pivot){
-	    l++;
-	    data[l]=work[i];
-	}else if(work[i]> pivot){
-	    h--;
-	    data[h]=work[i];
-	}
-    }
-    for(i=l+1; i<h; i++){
-	data[i]=pivot;
-    }
-    
-    return i-1;
-}
-
-#endif
-
 int simd_partition_2part_avx2(int64_t* data, int64_t pivot, int n)
 {
     int n4 = (n+3)/4;
@@ -563,13 +482,253 @@ int simd_partition_2part_avx2(int64_t* data, int64_t pivot, int n)
     return l+1;
 }
 
+#endif
+
+
+#ifdef AVX512
+union m512di{
+    __m512d d;
+    __m512i i;
+    __m512 f;
+};
+
+	    
+void dump512(__m512i* pdata,
+	     char * s)
+{
+    fprintf(stderr, "%s ", s);
+    int64_t * p = (int64_t*) pdata;
+    for(int i=0;i<8; i++){
+	fprintf(stderr, " %lx", p[i]);
+    }
+    fprintf(stderr, "\n");
+}
+
+int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
+{
+    //    if (n < 8){
+    //	return simd_partition_avx2(data,  pivot,  n);
+    //    }
+    int n8 = (n+7)/8;
+    int nb = n8*8;
+    __m512i  work256[n8];
+    int64_t *  work = (int64_t*) work256;
+    __m512d* src = (__m512d*)data;
+    __m512d* dest = (__m512d*)work;
+    //    fprintf(stderr, "addresses = %lx %lx\n",(int64_t) src, (int64_t) dest);
+    for(int i=0;i<n8;i++){
+	dest[i]=_mm512_loadu_pd((double*)(src+i));
+    }
+    int l= -1;
+    int h=n;
+    int i;
+    int n8l = n/8;
+    __m512i* pwork = (__m512i*)work;
+    __m512i pivotv = _mm512_broadcastq_epi64(*((__m128i*)(&pivot)));
+   
+    for(int ii=0;ii<n8l;ii++){
+#if 0
+	int i8 = ii<<3;
+	for(i=i8; i<i8+8; i++){
+	    if(work[i]> pivot){
+		h--;
+		dat<a[h]=work[i];
+	    }else if(work[i]< pivot){
+		l++;
+		data[l]=work[i];
+	    }
+	}
+#else
+	//	dump512(&pivotv, "pivot");
+	//	dump512(pwork+ii, "pwork[ii]");
+	__mmask8 maskl =  _mm512_cmpgt_epi64_mask(pivotv, pwork[ii]);
+	__mmask8 masku =  _mm512_cmpgt_epi64_mask( pwork[ii], pivotv);
+	register union m512di lower, upper;
+		int dl = _mm_popcnt_u32(maskl);
+		int dh = _mm_popcnt_u32(masku);
+	lower.d =_mm512_permutexvar_pd( *((__m512i*)(permute_table_lower_avx512
+						     +maskl)),
+					*((__m512d *)(pwork+ii)));
+	_mm512_storeu_pd((double*)(data+l+1), lower.d);
+	upper.d =_mm512_permutexvar_pd(*((__m512i*)(permute_table_upper_avx512
+						   +masku)),
+				       *((__m512d*)(pwork+ii)));
+	_mm512_mask_storeu_pd((double*)(data+h-8), mask_table_avx512[masku],
+			    upper.d);
+	l+=dl;
+	h-=dh; 
+#endif	
+    }
+    for(i=n8l*8;i<n;i++){
+	if(work[i]< pivot){
+	    l++;
+	    data[l]=work[i];
+	}else if(work[i]> pivot){
+	    h--;
+	    data[h]=work[i];
+	}
+    }
+    for(i=l+1; i<h; i++){
+	data[i]=pivot;
+    }
+    
+    return i-1;
+}
+
+#endif
+
+#ifdef SVE
+
+void dumpsve(svint64_t v,
+	     char *s)
+{
+    fprintf(stderr, "%s ", s);
+    int64_t x[8];
+    svst1_s64(svptrue_b64(),x, v);
+    for(int i=0;i<8;i++){
+	fprintf(stderr, " %lx", x[i]);
+    }
+    fprintf(stderr, "\n");
+    
+}
+
+void dump512(int64_t * pdata,
+	     char * s)
+{
+    fprintf(stderr, "%s ", s);
+    int64_t * p = (int64_t*) pdata;
+    for(int i=0;i<8; i++){
+	fprintf(stderr, " %lx", p[i]);
+    }
+    fprintf(stderr, "\n");
+}
+
+int simd_partition_sve_old(int64_t* data, int64_t pivot, int n)
+{
+    int nsve = svcntd();
+    int n8 = (n+nsve)/nsve;
+    int nb = n8*nsve;
+    int64_t __attribute__ ((aligned(64)))  work[nb];
+    svbool_t ptrue =svptrue_b64();
+    for(int i=0;i<nb;i+=nsve){
+	svst1_s64(ptrue, work+i, svld1_s64(ptrue, data+i));
+    }
+    int l= -1;
+    int h=n;
+    int i;
+    int n8l = n/nsve;
+    svint64_t  pivotv = svdup_s64(pivot);
+   
+    for(int i8=0;i8<n8l*nsve;i8+=nsve){
+#if 0
+	for(i=i8; i<i8+8; i++){
+	    if(work[i]> pivot){
+		h--;
+		dat<a[h]=work[i];
+	    }else if(work[i]< pivot){
+		l++;
+		data[l]=work[i];
+	    }
+	}
+#else
+	svint64_t val =svld1_s64(ptrue, work+i8);
+	svbool_t maskl =  svcmpgt_s64(ptrue, pivotv,val);
+	svbool_t masku =  svcmpgt_s64(ptrue, val, pivotv);
+	int dl = svcntp_b64(ptrue, maskl);
+	int dh = svcntp_b64(ptrue, masku);
+	svst1_s64(ptrue, data+l+1,  svcompact_s64(maskl, val));
+	svbool_t maskustore = svwhilelt_b64(0,dh);
+	svst1_s64(maskustore, data+h-dh,  svcompact_s64(masku, val));
+	l+=dl;
+	h-=dh; 
+#endif	
+    }
+	 
+    for(i=n8l*8;i<n;i++){
+	if(work[i]< pivot){
+	    l++;
+	    data[l]=work[i];
+	}else if(work[i]> pivot){
+	    h--;
+	    data[h]=work[i];
+	}
+    }
+    for(i=l+1; i<h; i++){
+	data[i]=pivot;
+    }
+    
+    return i-1;
+}
+int simd_partition_sve(int64_t* data, int64_t pivot, int n)
+{
+    int nsve = svcntd();
+    int n8 = (n+nsve)/nsve;
+    int nb = n8*nsve;
+    int64_t __attribute__ ((aligned(64)))  work[nb];
+    svbool_t ptrue =svptrue_b64();
+    for(int i=0;i<nb;i+=nsve){
+	svst1_s64(ptrue, work+i, svld1_s64(ptrue, data+i));
+    }
+    int l= -1;
+    int h=n;
+    int i;
+    int n8l = n/nsve;
+    svint64_t  pivotv = svdup_s64(pivot);
+   
+#if 0
+    for(int i8=0;i8<n8l*nsve;i8+=nsve){
+	for(i=i8; i<i8+8; i++){
+	    if(work[i]> pivot){
+		h--;
+		dat<a[h]=work[i];
+	    }else if(work[i]< pivot){
+		l++;
+		data[l]=work[i];
+	    }
+	}
+    }
+    for(i=n8l*8;i<n;i++){
+	if(work[i]< pivot){
+	    l++;
+	    data[l]=work[i];
+	}else if(work[i]> pivot){
+	    h--;
+	    data[h]=work[i];
+	}
+    }
+#else
+    for(int i8=0;i8<n;i8+=nsve){
+	svbool_t pmask= svwhilelt_b64(i8,n);
+	svint64_t val =svld1_s64(pmask, work+i8);
+	svbool_t maskl =  svcmpgt_s64(pmask, pivotv,val);
+	svbool_t masku =  svcmpgt_s64(pmask, val, pivotv);
+	int dl = svcntp_b64(pmask, maskl);
+	int dh = svcntp_b64(pmask, masku);
+	svst1_s64(pmask, data+l+1,  svcompact_s64(maskl, val));
+	svbool_t maskustore = svwhilelt_b64(0,dh);
+	svst1_s64(maskustore, data+h-dh,  svcompact_s64(masku, val));
+	l+=dl;
+	h-=dh; 
+    }
+#endif	
+    for(i=l+1; i<h; i++){
+	data[i]=pivot;
+    }
+	
+    
+    return i-1;
+}
+
+#endif
+
+
 void dump_data(int64_t* data,
 	       int n,
 	       char* message)
 {
     printf("%s ", message);
     for(int i=0;i<n; i++){
-	printf(" %ld", data[i]);
+	printf(" %lx", data[i]);
     }
     printf("\n");
 }
@@ -583,7 +742,9 @@ void simd_sort_int64_array_2part( int64_t * r, int lo, int up )
     int i, j;
     int64_t tempr;
     //      dump_data( r+lo, up-lo+1, "before");
+#ifdef AVX2
     i=simd_partition_2part_avx2(r+lo, r[lo], up-lo+1);
+#endif
     //        dump_data( r+lo, up-lo+1, "after ");
     //        printf("i=%d\n", i);
     simd_sort_int64_array_2part(r,lo,lo+i);  
@@ -592,7 +753,7 @@ void simd_sort_int64_array_2part( int64_t * r, int lo, int up )
 
 void simd_sort_int64_array( int64_t * r, int lo, int up )
 {
-    //    printf("called with %d %d\n", lo, up);
+    //       printf("called with %d %d\n", lo, up);
     if (up-lo<1) return;
     int i, j;
     int64_t tempr;
@@ -603,8 +764,11 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
 #ifdef AVX512
     i=simd_partition_avx512(r+lo, r[lo], up-lo+1);
 #endif
+#ifdef SVE
+    i=simd_partition_sve(r+lo, r[lo], up-lo+1);
+#endif
     
-    //    dump_data( r+lo, up-lo+1, "after ");
+    //   dump_data( r+lo, up-lo+1, "after ");
     //    printf("i=%d\n", i);
     simd_sort_int64_array(r,lo,lo+i-1);  
     simd_sort_int64_array(r,lo+i+1,up);  
