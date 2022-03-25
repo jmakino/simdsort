@@ -9,9 +9,9 @@ you can try this with
 ```
 The last part of the  output would look like
 ```
-qsort:  0.000494398
-sort:   0.000368343
-blocksort:  0.000204101
+qsort:  0.000482061
+sort:   0.000353943
+blocksort:  0.000170034
 sort passed for n=8002
 ```
 The numbers are elapsed time to sort 8002 64-bit integer numbers,
