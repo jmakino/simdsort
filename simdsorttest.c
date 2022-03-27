@@ -11,6 +11,7 @@
 
 #include "simdsort.h"
 
+void sort_int64_c(int64_t * a, int length);//defined in sort.cpp
 
 
 int main(int argc, char** argv)
@@ -39,20 +40,28 @@ int main(int argc, char** argv)
 	    data0[i]=data[i];
 	    data1[i]=data[i];
 	}
+	//	for (int i=0; i<n; i++){
+	//	    printf("i=%d   %ld\n",i, data[i]);
+	//	}
+
 	bool ok=true;
 	init_timer();
 	qsort(data, n, sizeof(int64_t), compare_int64_t);
 	if (showtime)print_dt("qsort: ");
 	init_timer();
-	sort_int64(data0, n); 
-	if (showtime)print_dt("sort:  ");
+	sort_int64_c(data0, n); 
+	if (showtime)print_dt("C++ std::sort:  ");
 	init_timer();
 	simd_sort_int64(data1, n); 
 	if (showtime)print_dt("blocksort: ");
+	//	for (int i=0; i<n; i++){
+	//	    printf("i=%d   %ld %ld\n",i, data[i], data1[i]);
+	//	}
+
 	for (int i=0; i<n; i++){
 	    if (data[i] != data1[i]){
 		ok=false;
-		printf("ERROR at:%d  %ld %ldg\n",i, data[i], data1[i]);
+		printf("ERROR at:%d  %ld %ld\n",i, data[i], data1[i]);
 		exit(-1);
 	    }
 	}

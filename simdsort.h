@@ -332,12 +332,13 @@ int block_partition(int64_t* data, int64_t pibot, int n)
 }
 
 #ifdef AVX2
-union m256di{
+typedef union m256di{
     __m256d d;
     __m256i i;
     __m256 f;
-};
+}M256DI, *PM256DI;
 
+#include "bitonic8.h"
 void dump256(__m256i* pdata,
 	     char * s)
 {
@@ -348,6 +349,7 @@ void dump256(__m256i* pdata,
     }
     fprintf(stderr, "\n");
 }
+
 
 int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
 {
@@ -583,6 +585,138 @@ int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
     return i-1;
 }
 
+int simd_partition_arrays_avx512_n1(uint64_t* data,
+				 int n)
+{
+     uint64_t pivot = data[0];
+    int n8 = (n+7)/8;
+    int nb = n8*8;
+    __m512i  work256[n8];
+    uint64_t *  work = (int64_t*) work256;
+    __m512d* src = (__m512d*)data;
+    __m512d* dest = (__m512d*)work;
+    for(int i=0;i<n8;i++){
+	dest[i]=_mm512_loadu_pd((double*)(src+i));
+    }
+    int l= -1;
+    int h=n;
+    int i;
+    int n8l = n/8;
+    __m512i* pwork = (__m512i*)work;
+    __m512i pivotv = _mm512_broadcastq_epi64(*((__m128i*)(&pivot)));
+   
+    for(int ii=0;ii<n8l;ii++){
+	__mmask8 maskl =  _mm512_cmpgt_epu64_mask(pivotv, pwork[ii]);
+	__mmask8 masku =  _mm512_cmpgt_epu64_mask( pwork[ii], pivotv);
+	int dl = _mm_popcnt_u32(maskl);
+	int dh = _mm_popcnt_u32(masku);
+	_mm512_mask_compressstoreu_pd((double*)(data+l+1), maskl, 
+				      *((__m512d*)(pwork+ii)));
+	_mm512_mask_compressstoreu_pd((double*)(data+h-dh), masku, 
+				      *((__m512d*)(pwork+ii)));
+	l+=dl;
+	h-=dh; 
+    }
+    int nremain = n -n8l*8;
+    if (nremain > 0){
+	int ii = n8l;
+	__mmask8 maskr =(__mmask8)  ((1<<nremain)-1);
+	__mmask8 maskl =  _mm512_mask_cmpgt_epu64_mask(maskr,pivotv, pwork[ii]);
+	__mmask8 masku =  _mm512_mask_cmpgt_epu64_mask(maskr, pwork[ii], pivotv);
+	int dl = _mm_popcnt_u32(maskl);
+	int dh = _mm_popcnt_u32(masku);
+	_mm512_mask_compressstoreu_pd((double*)(data+l+1), maskl, 
+				      *((__m512d*)(pwork+ii)));
+	_mm512_mask_compressstoreu_pd((double*)(data+h-dh), masku, 
+				      *((__m512d*)(pwork+ii)));
+	l+=dl;
+	h-=dh; 
+    }
+    for(i=l+1; i<h; i++){
+	data[i]=pivot;
+    }
+    
+    return i-1;
+}
+
+#if 0
+int simd_partition_arrays_avx512_n2(uint64_t* data,
+				    uint64_t* data1,
+				    int n)
+{
+    uint64_t pivot = data[0];
+    uint64_t pivot1 = data1[0];
+    int n8 = (n+7)/8;
+    int nb = n8*8;
+    __m512i  work256[n8];
+    __m512i  work2561[n8];
+    uint64_t *  work = (int64_t*) work256;
+    uint64_t *  work1 = (int64_t*) work2561;
+    __m512d* src = (__m512d*)data;
+    __m512d* dest = (__m512d*)work;
+    for(int i=0;i<n8;i++){
+	dest[i]=_mm512_loadu_pd((double*)(src+i));
+    }
+    __m512d* src = (__m512d*)data1;
+    __m512d* dest = (__m512d*)work1;
+    for(int i=0;i<n8;i++){
+	dest[i]=_mm512_loadu_pd((double*)(src+i));
+    }
+    int l= -1;
+    int h=n;
+    int i;
+    int n8l = n/8;
+    __m512i* pwork = (__m512i*)work;
+    __m512i* pwork1 = (__m512i*)work1;
+    __m512i pivotv = _mm512_broadcastq_epi64(*((__m128i*)(&pivot)));
+    __m512i pivotv1 = _mm512_broadcastq_epi64(*((__m128i*)(&pivot1)));
+   
+    for(int ii=0;ii<n8l;ii++){
+	__mmask8 maskl =  _mm512_cmpgt_epu64_mask(pivotv, pwork[ii]);
+	__mmask8 masku =  _mm512_cmpgt_epu64_mask( pwork[ii], pivotv);
+	__mmask8 maskeq =  _mm512_cmpeq_epu64_mask( pwork[ii], pivotv);
+	
+	int dl = _mm_popcnt_u32(maskl);
+	int dh = _mm_popcnt_u32(masku);
+	_mm512_mask_compressstoreu_pd((double*)(data+l+1), maskl, 
+				      *((__m512d*)(pwork+ii)));
+	_mm512_mask_compressstoreu_pd((double*)(data+h-dh), masku, 
+				      *((__m512d*)(pwork+ii)));
+	l+=dl;
+	h-=dh; 
+    }
+    int nremain = n -n8l*8;
+    if (nremain > 0){
+	int ii = n8l;
+	__mmask8 maskr =(__mmask8)  ((1<<nremain)-1);
+	__mmask8 maskl =  _mm512_mask_cmpgt_epu64_mask(maskr,pivotv, pwork[ii]);
+	__mmask8 masku =  _mm512_mask_cmpgt_epu64_mask(maskr, pwork[ii], pivotv);
+	int dl = _mm_popcnt_u32(maskl);
+	int dh = _mm_popcnt_u32(masku);
+	_mm512_mask_compressstoreu_pd((double*)(data+l+1), maskl, 
+				      *((__m512d*)(pwork+ii)));
+	_mm512_mask_compressstoreu_pd((double*)(data+h-dh), masku, 
+				      *((__m512d*)(pwork+ii)));
+	l+=dl;
+	h-=dh; 
+    }
+    for(i=l+1; i<h; i++){
+	data[i]=pivot;
+    }
+    
+    return i-1;
+}
+#endif
+int simd_partition_arrays_avx512(uint64_t** data,
+				 int nwords,
+				 int lo,
+				 int n)
+{
+    if (nwords==1){
+	return simd_partition_arrays_avx512_n1(data[0]+lo,n);
+    }
+}
+
 #endif
 
 #ifdef SVE
@@ -761,7 +895,16 @@ void simd_sort_int64_array_2part( int64_t * r, int lo, int up )
 
 void simd_sort_int64_array( int64_t * r, int lo, int up )
 {
-    //       printf("called with %d %d\n", lo, up);
+    //    fprintf(stderr, "called with %d %d\n", lo, up);
+#ifdef AVX2
+    if (up-lo+1<=8){
+	//	fprintf(stderr, "call bitonic8 with  %d\n", up-lo+1);
+	
+	bitonic8(r+lo, up-lo+1);
+	return;
+    }
+	    
+#endif	    
     if (up-lo<1) return;
     int i, j;
     int64_t tempr;
@@ -780,18 +923,59 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
     //    printf("i=%d\n", i);
     simd_sort_int64_array(r,lo,lo+i-1);  
     simd_sort_int64_array(r,lo+i+1,up);  
+    
 }
 
+#if 0 // not implemented yet
+void simd_sort_uint64_arrays( int64_t ** r, int nwords, int lo, int up )
+{
+    //       printf("called with %d %d\n", lo, up);
+    
+    if (up-lo<1) return;
+    int i, j;
+    int64_t tempr;
+    //    dump_data( r+lo, up-lo+1, "before");
+#ifdef AVX2    
+    i=simd_partition_avx2(r+lo, r[lo], up-lo+1);
+#endif
+#ifdef AVX512
+    i=simd_partition_arrays_avx512(r, nwords, lo, up-lo+1);
+#endif
+#ifdef SVE
+    i=simd_partition_sve(r+lo, r[lo], up-lo+1);
+#endif
+    
+    //   dump_data( r+lo, up-lo+1, "after ");
+    //    printf("i=%d\n", i);
+    simd_sort_int64_array(r,lo,lo+i-1);  
+    simd_sort_int64_array(r,lo+i+1,up);  
+}
+#endif
+ 
 void simd_sort_int64( int64_t * r, int n)
+{
+    static int initialized=0;
+    if (initialized==0){
+	init_sort_table();
+#ifdef AVX2
+	initialize_lsmask();
+#endif	    
+	initialized=1;
+    }
+    //    simd_sort_int64_array_2part(r, 0, n-1);
+    simd_sort_int64_array(r, 0, n-1);
+}
+
+#if 0  // not implemented yet
+void simd_sort_unt64s( uint64_t ** r,  int nwords, int n)
 {
     static int initialized=0;
     if (initialized==0){
 	init_sort_table();
 	initialized=1;
     }
-    //        simd_sort_int64_array_2part(r, 0, n-1);
-    simd_sort_int64_array(r, 0, n-1);
+    simd_sort_uint64_arrays(r, nwords, 0, n-1);
 }
-
+#endif
     
 	
