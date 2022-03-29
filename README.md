@@ -9,9 +9,9 @@ you can try this with
 ```
 The last part of the  output would look like
 ```
-qsort:  0.000462438
-C++ std::sort:   0.000277057
-blocksort:  0.000119454
+qsort:  0.000468138
+C++ std::sort:   0.000298972
+blocksort:  9.8489e-05
 sort passed for n=8002
 ```
 The numbers are elapsed time to sort 8002 64-bit integer numbers,
@@ -61,9 +61,13 @@ Gueron and  Krasnov 2015,
 
 In the AVX2 version, bitonic sort is called for n<= 8.
 
-# Changelog
+## Changelog
 
-## Mar 27, 2022
+### Mar 27, 2022
 
 * AVX2 version uses  bitonic sort for n<=8
+
+### Mar 29, 2022
+
+* AVX512 version uses  bitonic sort for n<=16
 

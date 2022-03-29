@@ -351,7 +351,7 @@ void dump256(__m256i* pdata,
 }
 
 
-int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
+int simd_partition_avx2(int64_t* data, int64_t pivot, int n, int*hi)
 {
     int n4 = (n+3)/4;
     int nb = n4*4;
@@ -418,8 +418,8 @@ int simd_partition_avx2(int64_t* data, int64_t pivot, int n)
     for(i=l+1; i<h; i++){
 	data[i]=pivot;
     }
-    
-    return i-1;
+    *hi=h;
+    return l+1;
 }
 
 int simd_partition_2part_avx2(int64_t* data, int64_t pivot, int n)
@@ -488,13 +488,16 @@ int simd_partition_2part_avx2(int64_t* data, int64_t pivot, int n)
 
 
 #ifdef AVX512
-union m512di{
+#ifndef AVX512_TYPE
+typedef union m512di{
     __m512d d;
     __m512i i;
     __m512 f;
-};
+}M512DI,*PM512DI ;
+#endif
 
-	    
+#include "bitonic16.h"
+
 void dump512(__m512i* pdata,
 	     char * s)
 {
@@ -506,7 +509,7 @@ void dump512(__m512i* pdata,
     fprintf(stderr, "\n");
 }
 
-int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
+int simd_partition_avx512(int64_t* data, int64_t pivot, int n, int*hi)
 {
     //    if (n < 8){
     //	return simd_partition_avx2(data,  pivot,  n);
@@ -581,8 +584,8 @@ int simd_partition_avx512(int64_t* data, int64_t pivot, int n)
     for(i=l+1; i<h; i++){
 	data[i]=pivot;
     }
-    
-    return i-1;
+    *hi = h;
+    return l+1;
 }
 
 int simd_partition_arrays_avx512_n1(uint64_t* data,
@@ -884,6 +887,7 @@ void simd_sort_int64_array_2part( int64_t * r, int lo, int up )
     int i, j;
     int64_t tempr;
     //      dump_data( r+lo, up-lo+1, "before");
+    if (up-lo<1) return;
 #ifdef AVX2
     i=simd_partition_2part_avx2(r+lo, r[lo], up-lo+1);
 #endif
@@ -905,15 +909,23 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
     }
 	    
 #endif	    
-    if (up-lo<1) return;
-    int i, j;
+#ifdef AVX512
+    if (up-lo+1<=16){
+	//	fprintf(stderr, "call bitonic16 with  %d\n", up-lo+1);
+	
+	bitonic16(r+lo, up-lo+1);
+	return;
+    }
+	    
+#endif	    
+    int i, j, hi;
     int64_t tempr;
     //    dump_data( r+lo, up-lo+1, "before");
 #ifdef AVX2    
-    i=simd_partition_avx2(r+lo, r[lo], up-lo+1);
+    i=simd_partition_avx2(r+lo, r[lo], up-lo+1, &hi);
 #endif
 #ifdef AVX512
-    i=simd_partition_avx512(r+lo, r[lo], up-lo+1);
+    i=simd_partition_avx512(r+lo, r[lo], up-lo+1, &hi);
 #endif
 #ifdef SVE
     i=simd_partition_sve(r+lo, r[lo], up-lo+1);
@@ -922,7 +934,7 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
     //   dump_data( r+lo, up-lo+1, "after ");
     //    printf("i=%d\n", i);
     simd_sort_int64_array(r,lo,lo+i-1);  
-    simd_sort_int64_array(r,lo+i+1,up);  
+    simd_sort_int64_array(r,lo+hi,up);  
     
 }
 

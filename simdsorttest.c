@@ -36,7 +36,7 @@ int main(int argc, char** argv)
     srandom(1);
     for (int n=nstart; n<nend; n++){
 	for (int i=0; i<n; i++){
-	    data[i]=(random()<<32 | random());
+	    data[i]=(random()<<32 | random()) ; 
 	    data0[i]=data[i];
 	    data1[i]=data[i];
 	}
