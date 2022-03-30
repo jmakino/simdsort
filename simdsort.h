@@ -723,6 +723,7 @@ int simd_partition_arrays_avx512(uint64_t** data,
 #endif
 
 #ifdef SVE
+#include "bitonic16sve.h"
 
 void dumpsve(svint64_t v,
 	     char *s)
@@ -804,7 +805,7 @@ int simd_partition_sve_old(int64_t* data, int64_t pivot, int n)
     
     return i-1;
 }
-int simd_partition_sve(int64_t* data, int64_t pivot, int n)
+int simd_partition_sve(int64_t* data, int64_t pivot, int n, int* hi)
 {
     int nsve = svcntd();
     int n8 = (n+nsve)/nsve;
@@ -861,7 +862,8 @@ int simd_partition_sve(int64_t* data, int64_t pivot, int n)
     }
 	
     
-    return i-1;
+    *hi = h;
+    return l+1;
 }
 
 #endif
@@ -900,6 +902,7 @@ void simd_sort_int64_array_2part( int64_t * r, int lo, int up )
 void simd_sort_int64_array( int64_t * r, int lo, int up )
 {
     //    fprintf(stderr, "called with %d %d\n", lo, up);
+    if (up-lo<1) return;
 #ifdef AVX2
     if (up-lo+1<=8){
 	//	fprintf(stderr, "call bitonic8 with  %d\n", up-lo+1);
@@ -909,7 +912,7 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
     }
 	    
 #endif	    
-#ifdef AVX512
+#if defined(AVX512) || defined(SVE)
     if (up-lo+1<=16){
 	//	fprintf(stderr, "call bitonic16 with  %d\n", up-lo+1);
 	
@@ -928,7 +931,7 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
     i=simd_partition_avx512(r+lo, r[lo], up-lo+1, &hi);
 #endif
 #ifdef SVE
-    i=simd_partition_sve(r+lo, r[lo], up-lo+1);
+    i=simd_partition_sve(r+lo, r[lo], up-lo+1, &hi);
 #endif
     
     //   dump_data( r+lo, up-lo+1, "after ");
@@ -941,12 +944,12 @@ void simd_sort_int64_array( int64_t * r, int lo, int up )
 #if 0 // not implemented yet
 void simd_sort_uint64_arrays( int64_t ** r, int nwords, int lo, int up )
 {
-    //       printf("called with %d %d\n", lo, up);
+    printf("called with %d %d\n", lo, up);
     
     if (up-lo<1) return;
     int i, j;
     int64_t tempr;
-    //    dump_data( r+lo, up-lo+1, "before");
+    dump_data( r+lo, up-lo+1, "before");
 #ifdef AVX2    
     i=simd_partition_avx2(r+lo, r[lo], up-lo+1);
 #endif
@@ -957,7 +960,7 @@ void simd_sort_uint64_arrays( int64_t ** r, int nwords, int lo, int up )
     i=simd_partition_sve(r+lo, r[lo], up-lo+1);
 #endif
     
-    //   dump_data( r+lo, up-lo+1, "after ");
+   dump_data( r+lo, up-lo+1, "after ");
     //    printf("i=%d\n", i);
     simd_sort_int64_array(r,lo,lo+i-1);  
     simd_sort_int64_array(r,lo+i+1,up);  

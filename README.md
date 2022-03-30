@@ -19,11 +19,11 @@ with system qsort(3), C++ std::sort  and simd quicksort.
 This result is ontained  on Intel® Core™ i7-1065G7 with gcc version
 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04).   AVX2 version is used.
 
-On Fugaku, the same test (slighyly older version) resulted in:
+On Fugaku, the same test resulted in:
 ```
-qsort:  0.00147074
-sort:   0.000958731
-blocksort:  0.000527481
+qsort:  0.00151181
+C++ std::sort:   0.000728001
+blocksort:  0.00029474
 sort passed for n=8002
 ```
 
@@ -59,7 +59,7 @@ Fast Quicksort Implementation Using AVX Instructions,
 Gueron and  Krasnov 2015, 
 10.1093/comjnl/bxv063
 
-In the AVX2 version, bitonic sort is called for n<= 8.
+In the AVX2, AVX512 and SVE  versions, bitonic sort is called for n<=8, n<=16 and n<=16, respectively. 
 
 ## Changelog
 
@@ -70,4 +70,8 @@ In the AVX2 version, bitonic sort is called for n<= 8.
 ### Mar 29, 2022
 
 * AVX512 version uses  bitonic sort for n<=16
+
+### Mar 30, 2022
+
+* SVE version uses  bitonic sort for n<=16
 
