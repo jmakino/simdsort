@@ -28,7 +28,6 @@ void bitonic16(int64_t *data, int n)
     svbool_t ptrue =svptrue_b64();
     svint64_t a, b, a1, b1;
     initial_copy16(data, a, b, n);
-   dumpsve2(a,b,"after initial copy");
 //    dumpsve2(a, b, "after initial copy");
     compare_and_swap16(a,b,a1,b1);
 //    dumpsve2(a1, b1, "after 1st compare");
@@ -144,7 +143,7 @@ void bitonic16(int64_t *data, int n)
    svint64_t d;
    c=  svzip1_s64(a1, b1);
    d=  svzip2_s64(a1, b1);
-   dumpsve2(c,d,"after sort and interleave");
+//   dumpsve2(c,d,"after sort and interleave");
    svbool_t maska= svwhilelt_b64(0,n);
    svbool_t maskb= svwhilelt_b64(8,n);
    svst1_s64(maska, data, c);
