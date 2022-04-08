@@ -5,8 +5,13 @@ A fast quicksort function with AVX2,  AVX512 and SVE  support
 you can try this with
 
 ```
-  make testsort
+  make testsort  #(C version)
 ```
+or
+```
+  make cpptestsort  #(C++ version)
+```
+
 The last part of the  output would look like
 ```
 qsort:  0.000468138
@@ -28,6 +33,8 @@ sort passed for n=8002
 ```
 
 ## Usage as header-only library
+
+### Pure C:
 
 ```
    #include "PATH/OF/THIS/FILE/simdsort.h"
@@ -52,6 +59,28 @@ For SVE, select CC = FCCpx in Makefile
 
 This source is in pure C and no care for name collision is done.
 
+
+### C++
+
+```
+   #include "PATH/OF/THIS/FILE/simdsort.hpp"
+```
+
+Provide:
+```
+void simd_sort(int64_t * r, int n);
+void simd_sort(uint64_t* hi,uint64_t* lo, uint64_t* index,  int n);
+```
+in namespace SIMDSortLib
+
+The version for single int64_t array is identical as Pure C version.
+r is the pointer to the array of int64_t to be sorted
+n is the number of elements
+
+The version which takes three arrays sorts these three arrays
+regarding three words hi[i], lo[i], index[i] forming single 192-bit
+unsigned integer. 
+
 ## Algorithm
 
 Essentially the same as in
@@ -59,7 +88,8 @@ Fast Quicksort Implementation Using AVX Instructions,
 Gueron and  Krasnov 2015, 
 10.1093/comjnl/bxv063
 
-In the AVX2, AVX512 and SVE  versions, bitonic sort is called for n<=8, n<=16 and n<=16, respectively. 
+In the AVX2, AVX512 and SVE  versions, bitonic sort is called for
+n<=8, n<=16 and n<=16, respectively.  (192-bit version works only with AVX512)
 
 ## Changelog
 
@@ -74,4 +104,8 @@ In the AVX2, AVX512 and SVE  versions, bitonic sort is called for n<=8, n<=16 an
 ### Mar 30, 2022
 
 * SVE version uses  bitonic sort for n<=16
+
+### Apr 8, 2022
+
+* 192-bit uint version and C++ interface added
 

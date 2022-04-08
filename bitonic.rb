@@ -107,6 +107,24 @@ def print_swap_code_avx512(type0, type1, n1, n2, m, count)
   print "\n"
 end
 
+def print_swap_code_avx512_kv(type0, type1, n1, n2, m, count)
+  2.times{|iwire|
+    index=[]
+    (m/2).times{|i|
+      iloc= comparator_to_location(type1, i, iwire, n2,m)
+      src =location_to_comparator(type0, iloc, n1, m)
+      index.push src[1]*(m/2)+src[0];
+    }
+    print "    static int64_t __attribute__ ((aligned(64)))  index#{count*2+iwire}[#{m/2}]={"+
+          index.join(",") +
+          "};\n"
+    "uli".each_char{|c|
+      print "    "+ "ab"[iwire] +c+ "= _mm512_permutex2var_epi64 (a#{c}1, _mm512_load_epi64(index#{count*2+iwire}), b#{c}1);\n"
+    }
+  }
+    print "\n"
+end
+
 def reorder_index(type0, type1, n1, n2, m, iwire)
   index=[]
   (m/2).times{|i|
@@ -463,6 +481,134 @@ EOF
 EOF
 end
 
+def generate_avx512_kv_sorter(s,m)
+  if m!= 16
+    STDERR.print "Currently only 16 is supported for avx512\n"
+    exit -1
+  end
+  print <<-EOF
+
+#undef  compare_and_swap#{m}
+#define compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1)\
+{\
+    __mmask8 gtmask  = _mm512_cmpgt_epu64_mask(au,bu)|\
+              (_mm512_cmpeq_epu64_mask(au,bu)&_mm512_cmpgt_epu64_mask(al,bl))|\
+              (_mm512_cmpeq_epu64_mask(au,bu)&_mm512_cmpeq_epu64_mask(al,bl)&_mm512_cmpgt_epu64_mask(ai,bi));\
+    bu1 = _mm512_mask_blend_epi64(gtmask, bu, au);\
+    bl1 = _mm512_mask_blend_epi64(gtmask, bl, al);\
+    bi1 = _mm512_mask_blend_epi64(gtmask, bi, ai);\
+    au1 = _mm512_mask_blend_epi64(gtmask, au, bu);\
+    al1 = _mm512_mask_blend_epi64(gtmask, al, bl);\
+    ai1 = _mm512_mask_blend_epi64(gtmask, ai, bi);\
+}
+
+//   static int64_t __attribute__ ((aligned(64)))  indexc[8]={0,8,1,9,2,10,3,11};
+//   static int64_t __attribute__ ((aligned(64)))  indexd[8]={4,12,5,13,6,14,7,15};
+ 
+void  final_reorder#{m}(__m512i au, __m512i al, __m512i ai, 
+                        __m512i bu, __m512i bl, __m512i bi, 
+                        int64_t* datau,int64_t* datal,int64_t* datai,
+                        int  n)
+{
+   int m= #{m}>>1;
+   __m512i cu, cl, ci;
+   __m512i du, dl, di;
+   cu=  _mm512_permutex2var_epi64 (au, _mm512_load_epi64(indexc), bu);
+   cl=  _mm512_permutex2var_epi64 (al, _mm512_load_epi64(indexc), bl);
+   ci=  _mm512_permutex2var_epi64 (ai, _mm512_load_epi64(indexc), bi);
+   du=  _mm512_permutex2var_epi64 (au, _mm512_load_epi64(indexd), bu);
+   dl=  _mm512_permutex2var_epi64 (al, _mm512_load_epi64(indexd), bl);
+   di=  _mm512_permutex2var_epi64 (ai, _mm512_load_epi64(indexd), bi);
+
+   if (n<= m){
+      	__mmask8 maska =(__mmask8)  ((1<<n)-1);
+         _mm512_mask_storeu_epi64(datau, maska, cu);
+         _mm512_mask_storeu_epi64(datal, maska, cl);
+         _mm512_mask_storeu_epi64(datai, maska, ci);
+   }else{
+   __mmask8 maskb =(__mmask8)  ((1<<n)-1);
+   _mm512_storeu_si512(datau, cu);
+   _mm512_storeu_si512(datal, cl);
+   _mm512_storeu_si512(datai, ci);
+   _mm512_mask_storeu_epi64(datau+m, maskb, du);
+   _mm512_mask_storeu_epi64(datal+m, maskb, dl);
+   _mm512_mask_storeu_epi64(datai+m, maskb, di);
+   }
+}
+
+
+#undef  initial_copy#{m}
+#define  initial_copy#{m}(datau, datal, datai,  au, al, ai, bu, bl, bi, n)\
+{\
+   int64_t intmax = INT64_MAX;\
+   __m512i datamax= _mm512_broadcastq_epi64(*((__m128i*)(&intmax)));\
+   __mmask8 maska =(__mmask8)  ((1<<n)-1);\
+   __mmask8 maskb =(__mmask8)  (((1<<n)-1)>>#{m/2});\
+   au=_mm512_mask_loadu_epi64(datamax, maska, datau);\
+   al=_mm512_mask_loadu_epi64(datamax, maska, datal);\
+   ai=_mm512_mask_loadu_epi64(datamax,maska, datai);\
+   bu=_mm512_mask_loadu_epi64(datamax,maskb, datau+#{m/2});\
+   bl=_mm512_mask_loadu_epi64(datamax,maskb, datal+#{m/2});\
+   bi=_mm512_mask_loadu_epi64(datamax,maskb, datai+#{m/2});\
+}
+
+void bitonic#{m}(uint64_t *datau, uint64_t *datal, uint64_t *datai, int n)
+{
+    int m = #{m/2};
+    __m512i au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1;
+    initial_copy#{m}(datau, datal, datai, au, al, ai, bu, bl, bi, n);
+//    dumpavx512(au, bu, "u after initial copy");
+//    dumpavx512(al, bl, "l after initial copy");
+//    dumpavx512(ai, bi, "i after initial copy");
+    compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1);
+//    dumpavx512(a1, b1, "after 1st compare");
+EOF
+
+  a=s.chomp.split("\n")
+  (a.size()-1).times{|i|
+    from=a[i].split
+    to=a[i+1].split
+    print_swap_code_avx512_kv(from[0], to[0], from[1].to_i,to[1].to_i,
+                    from[2].to_i, i)
+#    print "dumpavx512(a, b, \"after #{i} permute\");\n"
+    print "    compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1);\n"
+#    print "dumpavx512(a1, b1, \"after #{i} compare\");\n"
+  }
+  print <<-EOF
+  {
+   __m512i cu, cl, ci;
+   __m512i du, dl, di;
+EOF
+  "uli".each_char{|c| print <<-EOF
+   c#{c}=  _mm512_permutex2var_epi64 (a#{c}1, _mm512_load_epi64(indexc), b#{c}1);
+   d#{c}=  _mm512_permutex2var_epi64 (a#{c}1, _mm512_load_epi64(indexd), b#{c}1);
+EOF
+  }
+  print <<-EOF
+   if (n<= m){
+      	__mmask8 maska =(__mmask8)  ((1<<n)-1);
+EOF
+  "uli".each_char{|c| print "                 _mm512_mask_storeu_epi64(data#{c}, maska, c#{c});\n";
+  }
+  print <<-EOF
+
+   }else{
+   __mmask8 maskb =(__mmask8)  (((1<<n)-1)>>m);
+EOF
+  "uli".each_char{|c| print <<-EOF
+   _mm512_storeu_si512(data#{c}, c#{c});
+   _mm512_mask_storeu_epi64(data#{c}+m, maskb, d#{c});
+EOF
+  }
+  print <<-EOF
+  
+    }
+  }
+}
+EOF
+
+end
+
 def generate_sve_sorter(s,m)
   if m!= 16
     STDERR.print "Currently only 16 is supported for sve512\n"
@@ -542,7 +688,7 @@ end
 
 
 target="GENERIC"
-if ARGV[0]== "AVX512" || ARGV[0]== "SVE" 
+if ARGV[0]== "AVX512" || ARGV[0]== "SVE"  || ARGV[0]== "AVX512KV" 
   target =ARGV[0] 
   m=16
 else   
@@ -564,6 +710,8 @@ elsif mode==3
     generate_avx512_sorter(s,m)
   elsif target == "SVE"
     generate_sve_sorter(s,m)
+  elsif target == "AVX512KV"
+    generate_avx512_kv_sorter(s,m)
   end
     
 end
