@@ -118,8 +118,9 @@ def print_swap_code_avx512_kv(type0, type1, n1, n2, m, count)
     print "    static int64_t __attribute__ ((aligned(64)))  index#{count*2+iwire}[#{m/2}]={"+
           index.join(",") +
           "};\n"
+    print "    tab = _mm512_load_epi64(index#{count*2+iwire});\n"
     "uli".each_char{|c|
-      print "    "+ "ab"[iwire] +c+ "= _mm512_permutex2var_epi64 (a#{c}1, _mm512_load_epi64(index#{count*2+iwire}), b#{c}1);\n"
+      print "    "+ "ab"[iwire] +c+ "= _mm512_permutex2var_epi64 (a#{c}1, tab, b#{c}1);\n"
     }
   }
     print "\n"
@@ -216,19 +217,57 @@ def print_swap_code_sve(type0, type1, n1, n2, m, count)
   print "    static uint64_t __attribute__ ((aligned(64)))  index#{count*6+3}[#{m/2}]={"+
         bfinal.join(",") +
           "};\n"
+  c=""
+    2.times{|iwire|
+      name="ab"[iwire]+c
+      if is_identity(indices[iwire])
+        print "    #{name}=#{name}1;\n"
+      else
+        print "    #{name}=svtbl_s64(#{name}1, svld1_u64(ptrue,index#{count*6+iwire}));\n"
+      end
+    }
+    print "    sel = svcmpne_u64(ptrue,svzero,svld1_u64(ptrue,index#{count*6+2}));\n"
+    print "    a#{c}1=svsel_s64(sel, a#{c},b#{c});\n"
+    print "    b#{c}1=svsel_s64(sel, b#{c},a#{c});\n"
+    print "    b#{c}=svtbl_s64(b#{c}1, svld1_u64(ptrue,index#{count*6+3}));\n"
+    print "    a#{c}=a#{c}1;\n";
+end
+
+def print_swap_code_sve_kv(type0, type1, n1, n2, m, count)
+  # first make reorder list for a and b
+  indices=[]
+
   2.times{|iwire|
-    name="ab"[iwire]
-    if is_identity(indices[iwire])
-      print "    #{name}=#{name}1;\n"
-    else
-      print "    #{name}=svtbl_s64(#{name}1, svld1_u64(ptrue,index#{count*6+iwire}));\n"
-    end
+    indices[iwire]=reorder_index(type0, type1, n1, n2, m, iwire)
+    print "    static uint64_t __attribute__ ((aligned(64)))  index#{count*6+iwire}[#{m/2}]={"+
+          indices[iwire].join(",") +
+          "};\n"
   }
-  print "    sel = svcmpne_u64(ptrue,svzero,svld1_u64(ptrue,index#{count*6+2}));\n"
-  print "    a1=svsel_s64(sel, a,b);\n"
-  print "    b1=svsel_s64(sel, b,a);\n"
-  print "    b=svtbl_s64(b1, svld1_u64(ptrue,index#{count*6+3}));\n"
-  print "    a=a1;\n";
+  iwire=0
+  sel=destination_index(type0, type1, n1, n2, m, iwire)
+  bfinal=b_reorder_index(type0, type1, n1, n2, m, indices[0],indices[1],sel)
+  print "    static uint64_t __attribute__ ((aligned(64)))  index#{count*6+2+iwire}[#{m/2}]={"+
+        sel.join(",") +
+          "};\n"
+  print "    static uint64_t __attribute__ ((aligned(64)))  index#{count*6+3}[#{m/2}]={"+
+        bfinal.join(",") +
+        "};\n"
+  
+  "uli".each_char{|c|
+    2.times{|iwire|
+      name="ab"[iwire]+c
+      if is_identity(indices[iwire])
+        print "    #{name}=#{name}1;\n"
+      else
+        print "    #{name}=svtbl(#{name}1, svld1_u64(ptrue,index#{count*6+iwire}));\n"
+      end
+    }
+    print "    sel = svcmpne(ptrue,svzero,svld1_u64(ptrue,index#{count*6+2}));\n"
+    print "    a#{c}1=svsel(sel, a#{c},b#{c});\n"
+    print "    b#{c}1=svsel(sel, b#{c},a#{c});\n"
+    print "    b#{c}=svtbl(b#{c}1, svld1_u64(ptrue,index#{count*6+3}));\n"
+    print "    a#{c}=a#{c}1;\n";
+  }
 end
 
 def print_connections(type0, type1, n1, n2, m)
@@ -562,6 +601,7 @@ void bitonic#{m}(uint64_t *datau, uint64_t *datal, uint64_t *datai, int n)
 //    dumpavx512(ai, bi, "i after initial copy");
     compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1);
 //    dumpavx512(a1, b1, "after 1st compare");
+    __m512i tab;
 EOF
 
   a=s.chomp.split("\n")
@@ -687,8 +727,102 @@ EOF
 end
 
 
+
+def generate_sve_kv_sorter(s,m)
+  if m!= 16
+    STDERR.print "Currently only 16 is supported for avx512\n"
+    exit -1
+  end
+  print <<-EOF
+
+#undef  compare_and_swap#{m}
+#define compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1)\
+{\
+	    svbool_t masklhi =  svcmpgt(ptrue, au,bu);\
+	    svbool_t maskeqhi =  svcmpeq(ptrue, au,bu);\
+	    svbool_t maskllo =  svcmpgt(ptrue, al, bl);\
+	    svbool_t maskeqlo =  svcmpeq(ptrue, al, bl);\
+	    svbool_t masklindex =  svcmpgt(ptrue, ai, bi);\
+	    svbool_t maskl = svorr_z(ptrue,masklhi,\
+				   svorr_z(ptrue,\
+					 svand_z(ptrue,maskeqhi, maskllo),\
+					 svand_z(ptrue,maskeqhi,\
+					       svand_z(ptrue, maskeqlo,\
+						     masklindex))));\
+   au1= svsel(maskl,bu,au);\
+   al1= svsel(maskl,bl,al);\
+   ai1= svsel(maskl,bi,ai);\
+   bu1= svsel(maskl,au,bu);\
+   bl1= svsel(maskl,al,bl);\
+   bi1= svsel(maskl,ai,bi);\
+}
+
+ 
+
+#undef  initial_copy#{m}
+#define  initial_copy#{m}(datau, datal, datai,  au, al, ai, bu, bl, bi, n)\
+{\
+   uint64_t uintmax = UINT64_MAX;\
+   svuint64_t svuintmax= svdup_u64(uintmax);\
+   svbool_t maska= svwhilelt_b64(0,n);\
+   svbool_t maskb= svwhilelt_b64(#{m/2},n);\
+   au= svsel(maska,svld1(ptrue, datau),svuintmax);\
+   bu= svsel(maskb,svld1(ptrue, datau+#{m/2}),svuintmax);\
+   al= svsel(maska,svld1(ptrue, datal),svuintmax);\
+   bl= svsel(maskb,svld1(ptrue, datal+#{m/2}),svuintmax);\
+   ai= svsel(maska,svld1(ptrue, datai),svuintmax);\
+   bi= svsel(maskb,svld1(ptrue, datai+#{m/2}),svuintmax);\
+}
+
+void bitonic#{m}(uint64_t *datau, uint64_t *datal, uint64_t *datai, int n)
+{
+    int m = #{m/2};
+    svuint64_t svzero= svdup_u64(0);
+    svbool_t sel;
+    svbool_t ptrue =svptrue_b64();
+    svuint64_t au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1;
+    initial_copy#{m}(datau, datal, datai, au, al, ai, bu, bl, bi, n);
+//    dumpavx512(au, bu, "u after initial copy");
+//    dumpavx512(al, bl, "l after initial copy");
+//    dumpavx512(ai, bi, "i after initial copy");
+    compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1);
+//    dumpavx512(a1, b1, "after 1st compare");
+EOF
+
+  a=s.chomp.split("\n")
+  (a.size()-1).times{|i|
+    from=a[i].split
+    to=a[i+1].split
+    print_swap_code_sve_kv(from[0], to[0], from[1].to_i,to[1].to_i,
+                    from[2].to_i, i)
+#    print "dumpavx512(a, b, \"after #{i} permute\");\n"
+    print "    compare_and_swap#{m}(au, al, ai, bu, bl, bi, au1, al1, ai1,  bu1, bl1, bi1);\n"
+#    print "dumpavx512(a1, b1, \"after #{i} compare\");\n"
+  }
+  print <<-EOF
+
+   svuint64_t c;
+   svuint64_t d;
+   svbool_t maska= svwhilelt_b64(0,n);
+   svbool_t maskb= svwhilelt_b64(#{m/2},n);
+EOF
+  "uli".each_char{|c| print <<-EOF
+   c=  svzip1(a#{c}1, b#{c}1);
+   d=  svzip2(a#{c}1, b#{c}1);
+//   dumpsve2(c,d,"after sort and interleave");
+   svst1(maska, data#{c}, c);
+   svst1(maskb, data#{c}+m, d);
+EOF
+  }
+  print <<-EOF
+}
+EOF
+
+end
+
+
 target="GENERIC"
-if ARGV[0]== "AVX512" || ARGV[0]== "SVE"  || ARGV[0]== "AVX512KV" 
+if ARGV[0]== "AVX512" || ARGV[0]== "SVE"  || ARGV[0]== "AVX512KV"  || ARGV[0]== "SVEKV" 
   target =ARGV[0] 
   m=16
 else   
@@ -712,6 +846,8 @@ elsif mode==3
     generate_sve_sorter(s,m)
   elsif target == "AVX512KV"
     generate_avx512_kv_sorter(s,m)
+  elsif target == "SVEKV"
+    generate_sve_kv_sorter(s,m)
   end
     
 end

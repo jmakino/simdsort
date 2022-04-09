@@ -701,6 +701,7 @@ namespace SIMDSortLib{
 
 #ifdef SVE
 #include "bitonic16sve.h"
+#include "bitonic16svekv.h"
 
     void dumpsve(svint64_t v,
 		 char *s)
@@ -997,7 +998,7 @@ namespace SIMDSortLib{
 	}
 	    
 #endif	    
-#if defined(AVX512) || defined(SVEXX)
+#if defined(AVX512) || defined(SVE)
 	if (up-lo+1<=16){
 	    //	fprintf(stderr, "call bitonic16 with  %d\n", up-lo+1);
 	

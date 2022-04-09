@@ -53,7 +53,8 @@ n is the number of elements
 
 Use  -DAVX2, -DAVX512 and -DSVE   to utilize AVX2, AVX512 and SVE
 
-For SVE, select CC = FCCpx in Makefile
+Current Makefile check the architecture using /usr/bin/arch. So try to
+use native compiler on Fugaku (not the cross compiler). 
 
 ## Note
 
@@ -109,3 +110,7 @@ n<=8, n<=16 and n<=16, respectively.  (192-bit version works only with AVX512)
 
 * 192-bit uint version and C++ interface added
 
+### Apr 10, 2022
+
+* 192-bit uint version use AVX512/SVE and bitonic sort
+* Makefile uses /usr/bin/arch to determine which compiler and flags to be used
