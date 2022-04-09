@@ -726,6 +726,7 @@ namespace SIMDSortLib{
 	fprintf(stderr, "\n");
     }
 
+
     int simd_partition_sve(int64_t* data, int64_t pivot, int n, int* hi)
     {
 	int nsve = svcntd();
@@ -780,6 +781,86 @@ namespace SIMDSortLib{
 #endif	
 	for(i=l+1; i<h; i++){
 	    data[i]=pivot;
+	}
+	
+    
+	*hi = h;
+	return l+1;
+    }
+
+    int simd_partition_sve(uint64_t* vhi,
+			      uint64_t* vlo,
+			      uint64_t* index,
+			      uint64_t pivothi,
+			      uint64_t pivotlo,
+			      uint64_t pivotindex,
+			      int n,
+			      int*hi)
+    {
+	int nsve = svcntd();
+	int n8 = (n+nsve)/nsve;
+	int nb = n8*nsve;
+	uint64_t __attribute__ ((aligned(64)))  workhi[nb];
+	uint64_t __attribute__ ((aligned(64)))  worklo[nb];
+	uint64_t __attribute__ ((aligned(64)))  workindex[nb];
+	svbool_t ptrue =svptrue_b64();
+	for(int i=0;i<nb;i+=nsve){
+	    svst1(ptrue, workhi+i, svld1(ptrue, vhi+i));
+	    svst1(ptrue, worklo+i, svld1(ptrue, vlo+i));
+	    svst1(ptrue, workindex+i, svld1(ptrue, index+i));
+	}
+	int l= -1;
+	int h=n;
+	int i;
+	int n8l = n/nsve;
+	svuint64_t  pivotvhi = svdup_u64(pivothi);
+	svuint64_t  pivotvlo = svdup_u64(pivotlo);
+	svuint64_t  pivotvindex = svdup_u64(pivotindex);
+   
+	for(int i8=0;i8<n;i8+=nsve){
+	    svbool_t pmask= svwhilelt_b64(i8,n);
+	    svuint64_t valhi =svld1(pmask, workhi+i8);
+	    svuint64_t vallo =svld1(pmask, worklo+i8);
+	    svuint64_t valindex =svld1(pmask, workindex+i8);
+	    svbool_t masklhi =  svcmpgt(pmask, pivotvhi,valhi);
+	    svbool_t maskuhi =  svcmpgt(pmask, valhi, pivotvhi);
+	    svbool_t maskeqhi =  svcmpeq(pmask, valhi, pivotvhi);
+	    svbool_t maskllo =  svcmpgt(pmask, pivotvlo,vallo);
+	    svbool_t maskulo =  svcmpgt(pmask, vallo, pivotvlo);
+	    svbool_t maskeqlo =  svcmpeq(pmask, vallo, pivotvlo);
+	    svbool_t masklindex =  svcmpgt(pmask, pivotvindex,valindex);
+	    svbool_t maskuindex =  svcmpgt(pmask, valindex, pivotvindex);
+	    svbool_t maskl = svorr_z(pmask,masklhi,
+				   svorr_z(pmask,
+					 svand_z(pmask,maskeqhi, maskllo),
+					 svand_z(pmask,maskeqhi,
+					       svand_z(pmask, maskeqlo,
+						     masklindex))));
+	    svbool_t masku = svorr_z(pmask,maskuhi,
+				   svorr_z(pmask,
+					 svand_z(pmask,maskeqhi, maskulo),
+					 svand_z(pmask,maskeqhi,
+					       svand_z(pmask, maskeqlo,
+						     maskuindex))));
+	    
+								     
+
+	    int dl = svcntp_b64(pmask, maskl);
+	    int dh = svcntp_b64(pmask, masku);
+	    svst1(pmask, vhi+l+1,  svcompact(maskl, valhi));
+	    svst1(pmask, vlo+l+1,  svcompact(maskl, vallo));
+	    svst1(pmask, index+l+1,  svcompact(maskl, valindex));
+	    svbool_t maskustore = svwhilelt_b64(0,dh);
+	    svst1(maskustore, vhi+h-dh,  svcompact(masku, valhi));
+	    svst1(maskustore, vlo+h-dh,  svcompact(masku, vallo));
+	    svst1(maskustore, index+h-dh,  svcompact(masku, valindex));
+	    l+=dl;
+	    h-=dh; 
+	}
+	for(i=l+1; i<h; i++){
+	    vhi[i]=pivothi;
+	    vlo[i]=pivotlo;
+	    index[i]=pivotindex;
 	}
 	
     
@@ -916,7 +997,7 @@ namespace SIMDSortLib{
 	}
 	    
 #endif	    
-#if defined(AVX512) || defined(SVE)
+#if defined(AVX512) || defined(SVEXX)
 	if (up-lo+1<=16){
 	    //	fprintf(stderr, "call bitonic16 with  %d\n", up-lo+1);
 	
@@ -936,8 +1017,11 @@ namespace SIMDSortLib{
 				vhi[lo],vlo[lo], index[lo],
 				up-lo+1, &hi);
 #endif
-#ifdef SVEXX
-	i=simd_partition_sve(r+lo, r[lo], up-lo+1, &hi);
+#ifdef SVE
+	i=simd_partition_sve(vhi+lo, vlo+lo, index+lo,
+				vhi[lo],vlo[lo], index[lo],
+				up-lo+1, &hi);
+
 #endif
 #ifndef SIMDSORTLIB_USE_SIMD	
 	i=simd_partition(vhi+lo, vlo+lo, index+lo,   up-lo+1, &hi);
