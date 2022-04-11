@@ -22,21 +22,45 @@ public:
     uint64_t key;
     uint64_t hi;
     uint64_t lo;
+    inline uint64_t get_hi_key(){return hi;}
+    inline uint64_t get_lo_key(){return lo;}
+    inline uint64_t get_index(){return key;}
+    inline void  set_hi_key(uint64_t val){hi=val;}
+    inline void  set_lo_key(uint64_t val){lo=val;}
+    inline void  set_index(uint64_t val){key=val;}
 };
 
-bool operator<(const KeyValuePair& a, const KeyValuePair& b)
+
+template <class T>
+auto has_get_hi_key(T& a) -> decltype(a.get_hi_key(), bool())
 {
-    if (a.hi < b.hi ||  ((a.hi == b.hi) && (a.lo < b.lo))){
+  return true;
+}
+
+auto has_get_hi_key(...) -> bool
+{
+  return false;
+}
+
+
+template<class T>
+bool operator<(T& a, T& b)
+{
+    if (a.get_hi_key() < b.get_hi_key() ||  ((a.get_hi_key() == b.get_hi_key()) && (a.get_lo_key() < b.get_lo_key()))){
 	return true;
     }else{
 	return false;
     }
 }
-bool operator==(const KeyValuePair& a, const KeyValuePair& b)
+
+template<class T>
+bool operator==(T& a, T& b)
 {
-    return  (a.hi == b.hi &&  a.lo ==  b.lo &&  a.key ==  b.key);
+    return  (a.get_hi_key() == b.get_hi_key() &&  a.get_lo_key() ==  b.get_lo_key() &&  a.key ==  b.key);
 }
-bool operator!=(const KeyValuePair& a, const KeyValuePair& b)
+
+template<class T>
+bool operator!=(T& a, T& b)
 {
     return  ! (a==b);
 }
@@ -48,33 +72,17 @@ void dump_data(KeyValuePair * data,
     fprintf(stderr, "%s:\n", &(s[0]));
     for(auto i=0;i<n;i++){
 	fprintf(stderr, "data[%d] = %lu %lu %lu\n",
-		i, data[i].hi, data[i].lo,  data[i].key);
+		i, data[i].get_hi_key(), data[i].get_lo_key(),  data[i].key);
     }
 }
-void sort_kv_using_simdsort(KeyValuePair * data,
-			    int n)
-			    
-{
-    uint64_t hi[n];
-    uint64_t lo[n];
-    uint64_t index[n];
-    for (auto i=0;i<n;i++){
-	hi[i]=data[i].hi;
-	lo[i]=data[i].lo;
-	index[i]=data[i].key;
-    }
-    SIMDSortLib::simd_sort(hi, lo, index, n);
-    for (auto i=0;i<n;i++){
-	data[i].hi = hi[i];
-	data[i].lo = lo[i];
-	data[i].key = index[i];
-    }
-}
-	
+
     
-bool operator>(const KeyValuePair& t1, const KeyValuePair& t2) { return t2 < t1; }
-bool operator<=(const KeyValuePair& t1, const KeyValuePair& t2) { return !(t1 > t2); }
-bool operator>=(const KeyValuePair& t1, const KeyValuePair& t2) { return !(t1 < t2); }
+template<class T>
+bool operator>(T& t1, T& t2) { return t2 < t1; }
+template<class T>
+bool operator<=(T& t1, T& t2) { return !(t1 > t2); }
+template<class T>
+bool operator>=(T& t1, T& t2) { return !(t1 < t2); }
     
 int main(int argc, char** argv)
 {
@@ -114,7 +122,7 @@ int main(int argc, char** argv)
 	std::sort(data, data+n); 
 	if (showtime)SIMDSortLib::print_dt("C++ std::sort:  ");
 	SIMDSortLib::init_timer();
-	sort_kv_using_simdsort(data1, n); 
+	SIMDSortLib::sort_kv_using_simdsort(data1, n); 
 	if (showtime)SIMDSortLib::print_dt("blocksort: ");
 	//	for (int i=0; i<n; i++){
 	//	    printf("i=%d   %ld %ld\n",i, data[i], data1[i]);
@@ -138,6 +146,9 @@ int main(int argc, char** argv)
 	}
 
     }
+    printf("data has hi key=%d\n", has_get_hi_key(data[0]));
+    int n;
+    printf("int has hi key=%d\n", has_get_hi_key(n));
     exit(0);
     
 }

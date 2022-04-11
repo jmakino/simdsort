@@ -11,6 +11,10 @@ or
 ```
   make cpptestsort  #(C++ version)
 ```
+or
+```
+  make kvtestsort  #(C++ key-value pair version)
+```
 
 The last part of the  output would look like
 ```

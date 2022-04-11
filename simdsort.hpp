@@ -604,6 +604,7 @@ namespace SIMDSortLib{
 			      int n,
 			      int*hi)
     {
+	//	fprintf(stderr, "AVX512 partition called with %d\n", n);
 	int n8 = (n+7)/8;
 	int nb = n8*8;
 	__m512i  work512hi[n8];
@@ -1010,24 +1011,29 @@ namespace SIMDSortLib{
 	int i, j, hi;
 	int64_t tempr;
 	//    dump_data( r+lo, up-lo+1, "before");
+	int pivoti =  (((up+lo+123)*12345)%(up-lo+1));
+	if (pivoti <0) pivoti = -pivoti;
+	pivoti+= lo;
+	//	fprintf(stderr,"lo, p, up= %d %d %d\n", lo, pivoti, up);
+	//int pivoti = lo;
 #ifdef AVX2XX    
 	i=simd_partition_avx2(r+lo, r[lo], up-lo+1, &hi);
 #endif
 #ifdef AVX512
 	i=simd_partition_avx512(vhi+lo, vlo+lo, index+lo,
-				vhi[lo],vlo[lo], index[lo],
+				vhi[pivoti],vlo[pivoti], index[pivoti],
 				up-lo+1, &hi);
+	//	fprintf(stderr,"lo, i, hi= %d %d %d\n", lo, i, hi);
 #endif
 #ifdef SVE
 	i=simd_partition_sve(vhi+lo, vlo+lo, index+lo,
-				vhi[lo],vlo[lo], index[lo],
+				vhi[pivoti],vlo[pivoti], index[pivoti],
 				up-lo+1, &hi);
 
 #endif
 #ifndef SIMDSORTLIB_USE_SIMD	
 	i=simd_partition(vhi+lo, vlo+lo, index+lo,   up-lo+1, &hi);
 #endif    
-	//   dump_data( r+lo, up-lo+1, "after ");
 	//    printf("i=%d\n", i);
 	simd_sort_recursive(vhi, vlo, index, lo,lo+i-1);  
 	simd_sort_recursive(vhi, vlo, index, lo+hi,up);  
@@ -1060,6 +1066,27 @@ namespace SIMDSortLib{
 	    initialized=1;
 	}
 	simd_sort_recursive(hi, lo, index,  0, n-1);
+    }
+
+    template<class T>
+    void sort_kv_using_simdsort(T * data,
+				int n)
+	
+    {
+	uint64_t hi[n];
+	uint64_t lo[n];
+	uint64_t index[n];
+	for (auto i=0;i<n;i++){
+	    hi[i]=data[i].get_hi_key();
+	    lo[i]=data[i].get_lo_key();
+	    index[i]=data[i].key;
+	}
+	simd_sort(hi, lo, index, n);
+	for (auto i=0;i<n;i++){
+	    data[i].set_hi_key(hi[i]);
+	    data[i].set_lo_key(lo[i]);
+	    data[i].set_index(index[i]);
+	}
     }
     
 	
