@@ -38,7 +38,7 @@ void  final_reorder16(__m512i au, __m512i al, __m512i ai,
 
 
 #undef  initial_copy16
-#define  initial_copy16(datau, datal, datai,  au, al, ai, bu, bl, bi, n){   int64_t intmax = INT64_MAX;   __m512i datamax= _mm512_broadcastq_epi64(*((__m128i*)(&intmax)));   __mmask8 maska =(__mmask8)  ((1<<n)-1);   __mmask8 maskb =(__mmask8)  (((1<<n)-1)>>8);   au=_mm512_mask_loadu_epi64(datamax, maska, datau);   al=_mm512_mask_loadu_epi64(datamax, maska, datal);   ai=_mm512_mask_loadu_epi64(datamax,maska, datai);   bu=_mm512_mask_loadu_epi64(datamax,maskb, datau+8);   bl=_mm512_mask_loadu_epi64(datamax,maskb, datal+8);   bi=_mm512_mask_loadu_epi64(datamax,maskb, datai+8);}
+#define  initial_copy16(datau, datal, datai,  au, al, ai, bu, bl, bi, n){   M128IA intmax;intmax.i[0]= INT64_MAX;   __m512i datamax= _mm512_broadcastq_epi64(intmax.m);   __mmask8 maska =(__mmask8)  ((1<<n)-1);   __mmask8 maskb =(__mmask8)  (((1<<n)-1)>>8);   au=_mm512_mask_loadu_epi64(datamax, maska, datau);   al=_mm512_mask_loadu_epi64(datamax, maska, datal);   ai=_mm512_mask_loadu_epi64(datamax,maska, datai);   bu=_mm512_mask_loadu_epi64(datamax,maskb, datau+8);   bl=_mm512_mask_loadu_epi64(datamax,maskb, datal+8);   bi=_mm512_mask_loadu_epi64(datamax,maskb, datai+8);}
 
 void bitonic16(uint64_t *datau, uint64_t *datal, uint64_t *datai, int n)
 {

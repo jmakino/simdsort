@@ -118,3 +118,8 @@ n<=8, n<=16 and n<=16, respectively.  (192-bit version works only with AVX512)
 
 * 192-bit uint version use AVX512/SVE and bitonic sort
 * Makefile uses /usr/bin/arch to determine which compiler and flags to be used
+
+### Apr 30, 2022
+
+* Minor changes to make -fsanitize=address mode execution happy
+

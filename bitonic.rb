@@ -472,9 +472,9 @@ void  final_reorder#{m}(__m512i a, __m512i b, int64_t* data, int  n)
 
 #define  initial_copy#{m}(data, a, b, n)\
 {\
-   int64_t intmax = INT64_MAX;\
-   a= _mm512_broadcastq_epi64(*((__m128i*)(&intmax)));\
-   b= _mm512_broadcastq_epi64(*((__m128i*)(&intmax)));\
+   M128IA intmax;intmax.i[0]= INT64_MAX;\
+   a= _mm512_broadcastq_epi64(intmax.m);\
+   b= _mm512_broadcastq_epi64(intmax.m);\
    __mmask8 maska =(__mmask8)  ((1<<n)-1);\
    __mmask8 maskb =(__mmask8)  (((1<<n)-1)>>#{m/2});\
    a=_mm512_mask_loadu_epi64(a,maska, data);\
@@ -579,8 +579,8 @@ void  final_reorder#{m}(__m512i au, __m512i al, __m512i ai,
 #undef  initial_copy#{m}
 #define  initial_copy#{m}(datau, datal, datai,  au, al, ai, bu, bl, bi, n)\
 {\
-   int64_t intmax = INT64_MAX;\
-   __m512i datamax= _mm512_broadcastq_epi64(*((__m128i*)(&intmax)));\
+   M128IA intmax;intmax.i[0]= INT64_MAX;\
+   __m512i datamax= _mm512_broadcastq_epi64(intmax.m);\
    __mmask8 maska =(__mmask8)  ((1<<n)-1);\
    __mmask8 maskb =(__mmask8)  (((1<<n)-1)>>#{m/2});\
    au=_mm512_mask_loadu_epi64(datamax, maska, datau);\

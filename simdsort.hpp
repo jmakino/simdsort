@@ -500,6 +500,13 @@ namespace SIMDSortLib{
 	__m512i i;
 	__m512 f;
     }M512DI,*PM512DI ;
+
+    typedef union m128ia{
+	__m128i m;
+	int64_t i[2];
+    }M128IA, *PM128iA;
+
+
 #endif
 
 #include "bitonic16.h"
@@ -631,9 +638,13 @@ namespace SIMDSortLib{
 	__m512i* pworkhi = (__m512i*)workhi;
 	__m512i* pworklo = (__m512i*)worklo;
 	__m512i* pworkindex = (__m512i*)workindex;
-	__m512i pivotvhi = _mm512_broadcastq_epi64(*((__m128i*)(&pivothi)));
-	__m512i pivotvlo = _mm512_broadcastq_epi64(*((__m128i*)(&pivotlo)));
-	__m512i pivotvindex = _mm512_broadcastq_epi64(*((__m128i*)(&pivotindex)));
+	M128IA tmp;
+	tmp.i[0]=pivothi;
+	__m512i pivotvhi = _mm512_broadcastq_epi64(tmp.m);
+	tmp.i[0]=pivotlo;
+	__m512i pivotvlo = _mm512_broadcastq_epi64(tmp.m);
+	tmp.i[0]=pivotindex;
+	__m512i pivotvindex = _mm512_broadcastq_epi64(tmp.m);
    
 	for(int ii=0;ii<n8l;ii++){
    
@@ -1073,9 +1084,9 @@ namespace SIMDSortLib{
 				int n)
 	
     {
-	uint64_t hi[n];
-	uint64_t lo[n];
-	uint64_t index[n];
+	uint64_t hi[n+32];
+	uint64_t lo[n+32];
+	uint64_t index[n+32];
 	for (auto i=0;i<n;i++){
 	    hi[i]=data[i].get_hi_key();
 	    lo[i]=data[i].get_lo_key();
